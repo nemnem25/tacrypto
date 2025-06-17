@@ -18,6 +18,8 @@ def get_klines(symbol="TRXUSDT", interval="1d", limit=100):
     }
     r = requests.get(url, params=params)
     data = r.json()
+    if not data or isinstance(data, dict):
+        return pd.DataFrame()
     df = pd.DataFrame(data, columns=[
         'timestamp', 'Open', 'High', 'Low', 'Close', 'Volume',
         'Close_time', 'Quote_asset_volume', 'Number_of_trades',
@@ -41,6 +43,10 @@ try:
     df = get_klines(symbol, interval, limit)
 except Exception as e:
     st.error(f"Gagal mengambil data: {e}")
+    st.stop()
+
+if df.empty:
+    st.error("⚠️ Tidak ada data yang tersedia untuk simbol dan interval ini.")
     st.stop()
 
 # ============================
@@ -103,29 +109,51 @@ st.pyplot(fig)
 # ============================
 st.subheader("📊 Interpretasi Sederhana")
 
-latest = df.iloc[-1]
-price = latest['Close']
-rsi = latest['RSI']
-macd = latest['MACD']
-signal = latest['Signal']
+try:
+    latest = df.iloc[-1]
+    price = latest['Close']
+    rsi = latest['RSI']
+    macd = latest['MACD']
+    signal = latest['Signal']
 
-st.markdown(f"- 💰 **Harga sekarang:** `{price:.4f}`")
-st.markdown(f"- 📉 **RSI:** `{rsi:.2f}` → " + ("*Overbought ⚠️*" if rsi > 70 else "*Oversold ✅*" if rsi < 30 else "*Netral*"))
-st.markdown(f"- 🧭 **MACD vs Signal:** `{macd:.4f}` / `{signal:.4f}` → " + ("*Bullish crossover ✅*" if macd > signal else "*Bearish crossover ❌*"))
+    st.markdown(f"- 💰 **Harga sekarang:** `{price:.4f}`")
+    st.markdown(f"- 📉 **RSI:** `{rsi:.2f}` → " + ("*Overbought ⚠️*" if rsi > 70 else "*Oversold ✅*" if rsi < 30 else "*Netral*"))
+    st.markdown(f"- 🧭 **MACD vs Signal:** `{macd:.4f}` / `{signal:.4f}` → " + ("*Bullish crossover ✅*" if macd > signal else "*Bearish crossover ❌*"))
 
-fib_support = None
-fib_resistance = None
-for level in reversed(levels.values()):
-    if price > level:
-        fib_support = level
-        break
-for level in levels.values():
-    if price < level:
-        fib_resistance = level
-        break
+    fib_support = None
+    fib_resistance = None
+    for level in reversed(levels.values()):
+        if price > level:
+            fib_support = level
+            break
+    for level in levels.values():
+        if price < level:
+            fib_resistance = level
+            break
 
-if fib_support and fib_resistance:
-    st.markdown(f"- 📐 **Support Fibonacci:** `{fib_support:.4f}`")
-    st.markdown(f"- 📐 **Resistance Fibonacci:** `{fib_resistance:.4f}`")
+    if fib_support and fib_resistance:
+        st.markdown(f"- 📐 **Support Fibonacci:** `{fib_support:.4f}`")
+        st.markdown(f"- 📐 **Resistance Fibonacci:** `{fib_resistance:.4f}`")
 
-st.caption(f"Update terakhir: {df.index[-1].strftime('%Y-%m-%d %H:%M:%S')}")
+    st.caption(f"Update terakhir: {df.index[-1].strftime('%Y-%m-%d %H:%M:%S')}")
+except Exception as e:
+    st.error(f"❌ Gagal menampilkan interpretasi: {e}")
+
+# ============================
+# Tampilkan Data Tabel
+# ============================
+st.subheader("🧾 Data Harga dan Indikator")
+
+show_df = df[['Open', 'High', 'Low', 'Close', 'Volume', 'MA50', 'MA200', 'RSI', 'MACD', 'Signal']].tail(50)
+st.dataframe(show_df, use_container_width=True)
+
+# ============================
+# Tombol Unduh
+# ============================
+csv = df.to_csv().encode('utf-8')
+st.download_button(
+    label="📥 Unduh Semua Data sebagai CSV",
+    data=csv,
+    file_name=f"{symbol}_{interval}_data.csv",
+    mime='text/csv'
+)
