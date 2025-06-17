@@ -29,11 +29,9 @@ def get_price_data(coin_id, days):
     return df
 
 def add_indicators(df):
-    # MA
     df['MA20'] = df['price'].rolling(window=20).mean()
     df['MA50'] = df['price'].rolling(window=50).mean()
 
-    # RSI
     delta = df['price'].diff()
     gain = np.where(delta > 0, delta, 0)
     loss = np.where(delta < 0, -delta, 0)
@@ -42,12 +40,10 @@ def add_indicators(df):
     rs = avg_gain / avg_loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # MACD
     exp1 = df['price'].ewm(span=12, adjust=False).mean()
     exp2 = df['price'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-
     return df
 
 df = get_price_data(coin_id, days)
@@ -56,13 +52,20 @@ if df is None or df.empty:
     st.warning("⚠️ Tidak ada data dari CoinGecko. Periksa ID koin.")
 else:
     df = add_indicators(df)
+    latest = df.dropna().iloc[-1]
+    latest_price = latest['price']
+
+    # Fibonacci
     min_price = df['price'].min()
     max_price = df['price'].max()
-
     levels = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
     fib_levels = {f"{int(level*100)}%": max_price - (max_price - min_price) * level for level in levels}
 
-    # === CHART HARGA + FIBONACCI ===
+    # Temukan level Fibonacci terdekat
+    near_level_label = min(fib_levels, key=lambda k: abs(fib_levels[k] - latest_price))
+    near_level_price = fib_levels[near_level_label]
+
+    # === GRAFIK HARGA + FIBONACCI ===
     st.subheader("📈 Harga Harian + Fibonacci Levels")
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(df['date'], df['price'], label="Harga", color="black")
@@ -105,25 +108,58 @@ else:
     st.dataframe(pd.DataFrame(fib_levels, index=["USD"]).T)
 
     # === INTERPRETASI ===
-    latest = df.iloc[-1]
-    latest_price = latest['price']
-    near_level_label, near_level_price = min(fib_levels.items(), key=lambda x: abs(x[1] - latest_price))
+    st.subheader("📊 Ringkasan Data Teknis")
+    st.markdown(f"""
+    - **Harga terakhir:** ${latest_price:.4f}  
+    - **RSI:** {latest['RSI']:.2f}  
+    - **MACD:** {latest['MACD']:.4f}  
+    - **Signal Line:** {latest['Signal']:.4f}  
+    - **MA20:** {latest['MA20']:.4f}  
+    - **MA50:** {latest['MA50']:.4f}
+    """)
 
-    st.subheader("🧠 Interpretasi Otomatis")
-    st.markdown(f"Harga terakhir: **${latest_price:.3f}**, dekat level Fibonacci **{near_level_label}** (${near_level_price:.3f})")
+    st.subheader("🧾 Tafsiran Naratif")
 
-    # RSI Interpretation
+    fib_desc = f"Harga saat ini berada di sekitar level Fibonacci {near_level_label} yaitu sekitar ${near_level_price:.3f}, yang sering kali menjadi zona tarik-ulur antara pembeli dan penjual. Ini menunjukkan bahwa pasar sedang menguji batas penting dalam konteks psikologis dan teknikal."
+
+    rsi_desc = ""
     if latest['RSI'] >= 70:
-        st.warning("📍 RSI berada di atas 70: kondisi *overbought*, potensi koreksi.")
+        rsi_desc = f"RSI yang berada di angka {latest['RSI']:.2f} menandakan kondisi *overbought*, mengindikasikan potensi koreksi atau perlambatan tren naik saat ini."
     elif latest['RSI'] <= 30:
-        st.success("📍 RSI di bawah 30: kondisi *oversold*, potensi pantulan.")
+        rsi_desc = f"RSI tercatat di {latest['RSI']:.2f}, menandakan kondisi *oversold*. Ini bisa membuka peluang pantulan harga dalam waktu dekat."
     else:
-        st.info("📍 RSI normal (30-70): belum ada sinyal jenuh beli/jual.")
+        rsi_desc = f"RSI berada di kisaran netral ({latest['RSI']:.2f}), yang menunjukkan belum ada tekanan beli atau jual yang ekstrem."
 
-    # MACD Interpretation
+    macd_desc = ""
     if latest['MACD'] > latest['Signal']:
-        st.success("📈 MACD di atas signal line: tren naik sedang berlangsung.")
+        macd_desc = f"MACD saat ini ({latest['MACD']:.4f}) berada di atas garis sinyal ({latest['Signal']:.4f}), mengindikasikan kekuatan tren naik sedang berkembang."
     elif latest['MACD'] < latest['Signal']:
-        st.warning("📉 MACD di bawah signal line: tren turun mungkin terjadi.")
+        macd_desc = f"MACD ({latest['MACD']:.4f}) berada di bawah garis sinyal ({latest['Signal']:.4f}), yang mencerminkan momentum menurun."
     else:
-        st.info("📍 MACD dan signal line berpotongan: tunggu konfirmasi arah.")
+        macd_desc = f"MACD dan signal line saling bertemu di {latest['MACD']:.4f}, menandakan ketidakpastian arah tren jangka pendek."
+
+    ma_desc = ""
+    if latest['MA20'] > latest['MA50']:
+        ma_desc = f"Rata-rata MA20 (${latest['MA20']:.4f}) berada di atas MA50 (${latest['MA50']:.4f}), mencerminkan tren jangka pendek yang masih lebih kuat daripada jangka menengah, yang merupakan sinyal bullish."
+    elif latest['MA20'] < latest['MA50']:
+        ma_desc = f"MA20 (${latest['MA20']:.4f}) berada di bawah MA50 (${latest['MA50']:.4f}), sinyal teknikal awal potensi pembalikan ke bawah (bearish crossover)."
+    else:
+        ma_desc = f"MA20 dan MA50 berimpit, menunjukkan pasar sedang berada dalam fase konsolidasi."
+
+    outlook = ""
+    if latest['RSI'] < 70 and latest['MACD'] > latest['Signal'] and latest_price > latest['MA20']:
+        outlook = "Secara umum, kombinasi RSI netral, MACD positif, dan harga di atas MA20 mengindikasikan peluang lanjutan tren naik dalam jangka pendek. Namun, perlu waspada terhadap volatilitas di sekitar level Fibonacci saat ini."
+    else:
+        outlook = "Meskipun indikator menunjukkan sinyal yang bercampur, pasar saat ini cenderung menunggu pemicu baru untuk bergerak signifikan. Trader sebaiknya memperhatikan konfirmasi volume dan breakout di atas level Fibonacci terdekat."
+
+    st.markdown(f"""
+    1️⃣ {fib_desc}
+
+    2️⃣ {rsi_desc}
+
+    3️⃣ {macd_desc}
+
+    4️⃣ {ma_desc}
+
+    5️⃣ {outlook}
+    """)
